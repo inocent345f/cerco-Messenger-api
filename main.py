@@ -1,9 +1,6 @@
 from fastapi import FastAPI, HTTPException, status
-from typing import Union
 import model
 from fastapi.encoders import jsonable_encoder
-from typing import Annotated
-from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -82,7 +79,7 @@ def verify_otp( otp_data: model.VerifyOtp):
 def Login(user_data: model.Login):
     try: 
         supabase = supabaseClient()
-        email = get_email_by_username(supabase, user_data.username)
+        email = get_email_by_username(supabase, user_data.username) 
         response =  supabase.auth.sign_in_with_password({
             'email': email, 
             'password': user_data.password
