@@ -90,6 +90,12 @@ def Login(user_data: model.Login):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
         )
+
+@app.get('/users')
+def get_users( ):
+    supabase = supabaseClient()
+    response= supabase.table("user").select("*").execute()
+    return response.data     
         
         
     # return {
