@@ -27,19 +27,18 @@ def supabaseClient():
     supabase: Client = create_client(url, key)
     return supabase
 
-# Vérification si l'utilisateur ou l'email existe déjà
 def user_exist(supabase, username, email):
-    username_exists = supabase.table('user').select('*').eq('username', username).execute().data
-    email_exists = supabase.table('user').select('*').eq('email', email).execute().data
-    
-    if username_exists:
-        return "username"
-    if email_exists:
-        return "email"
-    return None
-    
+    response = supabase.table('user').select('*').or_(
+        f'username.eq.{username}, email.eq.{email}'
+    ).execute()
+    if response.data:
+        return True
+    return False
+
 def get_email_by_username(supabase, username: str):
-    response = supabase.table('user').select('email').eq('username', username).execute()
+    response = supabase.table('user').select('email').eq(
+        'username', username
+    ).execute()
     if response.data:
         return response.data[0]['email']
     raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
@@ -49,28 +48,29 @@ def signup(user_data: model.Signup):
     try:
         supabase = supabaseClient()
 
-        # Vérification si l'identifiant ou l'email existent déjà
-        existing_field = user_exist(supabase, user_data.username, user_data.email)
-        if existing_field == "username":
-            raise HTTPException(status_code=409, detail="L'identifiant est déjà utilisé. Veuillez choisir un autre identifiant.")
-        elif existing_field == "email":
-            raise HTTPException(status_code=409, detail="L'email est déjà utilisé. Veuillez en utiliser un autre.")
-
-        # Validation du mot de passe (longueur minimale de 6 caractères)
-        if len(user_data.password) < 6:
-            raise HTTPException(status_code=400, detail="Le mot de passe doit comporter au moins 6 caractères.")
-
-        # Enregistrement de l'utilisateur
+        # Vérifier si l'identifiant ou l'email existent déjà
+        if user_exist(supabase, user_data.username, user_data.email):
+            # Vérifier si c'est l'email ou le username qui est déjà pris et envoyer un message d'erreur explicite
+            response = supabase.table('user').select('*').eq('username', user_data.username).execute()
+            if response.data:
+                raise HTTPException(status_code=409, detail="L'identifiant est déjà utilisé.")
+            
+            response = supabase.table('user').select('*').eq('email', user_data.email).execute()
+            if response.data:
+                raise HTTPException(status_code=409, detail="L'email est déjà utilisé.")
+            
+            # Si les deux sont déjà utilisés
+            raise HTTPException(status_code=409, detail="L'identifiant et l'email sont déjà utilisés.")
+        
         response = supabase.auth.sign_up({
             'email': user_data.email,
             'password': user_data.password,
         })
         supabase.table('user').insert({'username': user_data.username, 'email': user_data.email}).execute()
         return response
-    except HTTPException as e:
-        raise e
+
     except Exception as e:
-        raise HTTPException(status_code=UNKNOWN_STATUS_CODE, detail="Une erreur inattendue est survenue. Vérifiez votre connexion et réessayez.")
+        raise HTTPException(status_code=409, detail="Une erreur inattendue est survenue.")
 
 @app.post('/verify-otp')
 def verify_otp(otp_data: model.VerifyOtp):
@@ -80,28 +80,24 @@ def verify_otp(otp_data: model.VerifyOtp):
         return {"message": "Email vérifié avec succès"}
     except Exception as e:
         if 'Token has expired or is invalid' in str(e):
-            raise HTTPException(status_code=WRONG_STATUS_CODE, detail="Le code OTP est invalide ou a expiré.")
+            raise HTTPException(status_code=WRONG_STATUS_CODE, detail=str(e))
         else:
-            raise HTTPException(status_code=UNKNOWN_STATUS_CODE, detail="Une erreur inattendue est survenue pendant la vérification OTP.")
+            raise HTTPException(status_code=UNKNOWN_STATUS_CODE, detail=str(e))
 
 @app.post('/login')
 def Login(user_data: model.Login):
     try:
         supabase = supabaseClient()
         email = get_email_by_username(supabase, user_data.username)
-        
-        # Vérification des identifiants de connexion
         response = supabase.auth.sign_in_with_password({
             'email': email,
             'password': user_data.password
         })
         return jsonable_encoder(response.session)
-    except HTTPException as e:
-        raise e
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Identifiants invalides ou utilisateur non trouvé. Vérifiez votre identifiant et mot de passe."
+            detail=str(e)
         )
 
 @app.get('/users')
