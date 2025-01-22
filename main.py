@@ -28,6 +28,7 @@ def supabaseClient():
     return supabase
 
 def user_exist(supabase, username, email):
+    # Vérifie si l'email ou l'identifiant existe déjà dans la base de données
     response = supabase.table('user').select('*').or_(
         f'username.eq.{username}, email.eq.{email}'
     ).execute()
@@ -62,6 +63,7 @@ def signup(user_data: model.Signup):
             # Si les deux sont déjà utilisés
             raise HTTPException(status_code=409, detail="L'identifiant et l'email sont déjà utilisés.")
         
+        # Si l'email et l'identifiant sont valides, procéder à l'inscription
         response = supabase.auth.sign_up({
             'email': user_data.email,
             'password': user_data.password,
@@ -69,8 +71,12 @@ def signup(user_data: model.Signup):
         supabase.table('user').insert({'username': user_data.username, 'email': user_data.email}).execute()
         return response
 
+    except HTTPException as e:
+        # Utiliser la gestion d'erreur explicite pour HTTPException
+        raise e
     except Exception as e:
-        raise HTTPException(status_code=409, detail="Une erreur inattendue est survenue.")
+        # Gérer les erreurs inattendues
+        raise HTTPException(status_code=UNKNOWN_STATUS_CODE, detail="Une erreur inattendue est survenue : " + str(e))
 
 @app.post('/verify-otp')
 def verify_otp(otp_data: model.VerifyOtp):
@@ -85,7 +91,7 @@ def verify_otp(otp_data: model.VerifyOtp):
             raise HTTPException(status_code=UNKNOWN_STATUS_CODE, detail=str(e))
 
 @app.post('/login')
-def Login(user_data: model.Login):
+def login(user_data: model.Login):
     try:
         supabase = supabaseClient()
         email = get_email_by_username(supabase, user_data.username)
@@ -97,7 +103,7 @@ def Login(user_data: model.Login):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
+            detail="Erreur d'authentification : " + str(e)
         )
 
 @app.get('/users')
