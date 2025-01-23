@@ -6,6 +6,10 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 import os
 from typing import Annotated
+import base64
+from datetime import datetime
+import uuid
+from model import UpdateUserProfile
 
 load_dotenv()
 
@@ -101,7 +105,122 @@ def get_users( supabase: supabaseDep):
 def get_users(supabase: supabaseDep,username: str):
     response= supabase.table("user").select("*").eq('username', username).execute()
     return response.data[0]
+
+@app.put("/update-user")
+async def update_user(supabase: supabaseDep, data: UpdateUserProfile):
+    try:
+        # Préparer les données à mettre à jour
+        update_data = {
+            "name": data.name,
+            "phone": data.phone,
+            "description": data.description,
+            "profile_picture_url": data.profile_picture_url,
+            "updated_at": datetime.utcnow().isoformat()
+        }
         
+        # Mettre à jour l'utilisateur dans la base de données
+        response = supabase.table("user").update(update_data).eq("username", data.username).execute()
+        
+        if response.data:
+            return {
+                "status": "success",
+                "data": response.data[0] if response.data else None
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Impossible de mettre à jour l'utilisateur"
+            )
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+@app.get("/profile-picture/{username}")
+async def get_profile_picture(supabase: supabaseDep, username: str):
+    try:
+        response = supabase.table("user").select("profile_picture_url").eq("username", username).execute()
+        
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        return {"profile_picture_url": response.data[0]["profile_picture_url"]}
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.post("/update-profile-picture")
+async def update_profile_picture(supabase: supabaseDep, data: model.UpdateProfilePicture):
+    try:
+        # Decode base64 image
+        image_data = base64.b64decode(data.file_data)
+        
+        # Generate unique filename
+        file_ext = "jpg"  # You might want to make this dynamic based on the actual image type
+        filename = f"{data.username}_{uuid.uuid4()}.{file_ext}"
+        
+        # Upload to Supabase Storage
+        storage_response = supabase.storage.from_("profile-pictures").upload(
+            filename,
+            image_data,
+            {"content-type": "image/jpeg"}
+        )
+        
+        # Get public URL
+        file_url = supabase.storage.from_("profile-pictures").get_public_url(filename)
+        
+        # Update user profile in database
+        response = supabase.table("user").update(
+            {"profile_picture_url": file_url, "updated_at": datetime.utcnow().isoformat()}
+        ).eq("username", data.username).execute()
+        
+        return {"status": "success", "profile_picture_url": file_url}
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+@app.delete("/remove-profile-picture")
+async def remove_profile_picture(supabase: supabaseDep, data: model.RemoveProfilePicture):
+    try:
+        # Récupérer l'URL actuelle de la photo de profil
+        user = supabase.table("user").select("profile_picture_url").eq("username", data.username).execute()
+        
+        if user.data and user.data[0].get("profile_picture_url"):
+            current_url = user.data[0]["profile_picture_url"]
+            
+            # Extraire le nom du fichier de l'URL
+            filename = current_url.split("/")[-1]
+            
+            # Supprimer le fichier du stockage Supabase
+            supabase.storage.from_("profile-pictures").remove([filename])
+            
+            # Mettre à jour l'utilisateur dans la base de données
+            response = supabase.table("user").update({
+                "profile_picture_url": None,
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("username", data.username).execute()
+            
+            return {"status": "success", "message": "Photo de profil supprimée avec succès"}
+        else:
+            return {"status": "success", "message": "Aucune photo de profil à supprimer"}
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )        
         
     # return {
     #     "message": "Connexion réussie",
