@@ -1,10 +1,11 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status,Depends
 import model
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from dotenv import load_dotenv
 import os
+from typing import Annotated
 
 load_dotenv()
 
@@ -27,9 +28,9 @@ def supabaseClient():
     supabase: Client = create_client(url, key)
     return supabase
 
-#supabaseDep = Annotated[Client, Depends(supabaseClient)]
+supabaseDep = Annotated[Client, Depends(supabaseClient)]
 
-def user_exist(supabase, username,email):
+def user_exist(supabase: supabaseDep, username,email):
     response = supabase.table('user').select('*').or_(
     f'username.eq.{username}, email.eq.{email}'
     ).execute()
@@ -38,7 +39,7 @@ def user_exist(supabase, username,email):
     else:
         return False
     
-def get_email_by_username(supabase, username: str):
+def get_email_by_username(supabase: supabaseDep, username: str):
     response = supabase.table('user').select('email').eq(
     'username', username
     ).execute()
@@ -48,9 +49,9 @@ def get_email_by_username(supabase, username: str):
 
 
 @app.post('/register')
-def signup(user_data:model.Signup):
+def signup(supabase: supabaseDep,user_data:model.Signup):
     try:
-        supabase = supabaseClient()
+        
         if user_exist(supabase,user_data.username, user_data.email):
             raise HTTPException(status_code=404, detail="l'utilisarteur existe déja")
         response = supabase.auth.sign_up({
@@ -63,7 +64,7 @@ def signup(user_data:model.Signup):
         raise HTTPException(status_code=404, detail=str(e))
     
 @app.post('/verify-otp')
-def verify_otp( otp_data: model.VerifyOtp):
+def verify_otp( supabase: supabaseDep,otp_data: model.VerifyOtp):
     try:
         supabase = supabaseClient()
         supabase.auth.verify_otp(jsonable_encoder(otp_data))
@@ -76,9 +77,9 @@ def verify_otp( otp_data: model.VerifyOtp):
         
         
 @app.post('/login')
-def Login(user_data: model.Login):
+def Login(supabase: supabaseDep,user_data: model.Login):
     try: 
-        supabase = supabaseClient()
+
         email = get_email_by_username(supabase, user_data.username) 
         response =  supabase.auth.sign_in_with_password({
             'email': email, 
@@ -92,10 +93,14 @@ def Login(user_data: model.Login):
         )
 
 @app.get('/users')
-def get_users( ):
-    supabase = supabaseClient()
+def get_users( supabase: supabaseDep):
     response= supabase.table("user").select("*").execute()
     return response.data     
+
+@app.get('/user')
+def get_users(supabase: supabaseDep,username: str):
+    response= supabase.table("user").select("*").eq('username', username).execute()
+    return response.data[0]
         
         
     # return {
