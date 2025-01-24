@@ -13,8 +13,8 @@ from model import UpdateUserProfile
 
 load_dotenv()
 
-url= os.getenv("url")
-key = os.getenv("key")
+url= os.getenv("SUPABASE_URL")
+key = os.getenv("SUPABASE_KEY")
 
 app =  FastAPI()
 WRONG_STATUS_CODE = 400
@@ -219,10 +219,4 @@ async def remove_profile_picture(supabase: supabaseDep, data: model.RemoveProfil
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
-        )        
-        
-    # return {
-    #     "message": "Connexion réussie",
-    #     "access_token": response['data']['access_token'],
-    #     "user": response['data']['user']
-    # }
+        )
