@@ -13,8 +13,8 @@ from model import UpdateUserProfile
 
 load_dotenv()
 
-url= os.getenv("SUPABASE_URL")
-key = os.getenv("SUPABASE_KEY")
+url= os.getenv("url")
+key = os.getenv("key")
 
 app =  FastAPI()
 WRONG_STATUS_CODE = 400
