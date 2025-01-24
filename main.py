@@ -115,7 +115,6 @@ async def update_user(supabase: supabaseDep, data: UpdateUserProfile):
             "phone": data.phone,
             "description": data.description,
             "profile_picture_url": data.profile_picture_url,
-            "updated_at": datetime.utcnow().isoformat()
         }
         
         # Mettre à jour l'utilisateur dans la base de données
