@@ -20,6 +20,8 @@ app =  FastAPI()
 WRONG_STATUS_CODE = 400
 UNKNOWN_STATUS_CODE = 500
 
+connections = {}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],
@@ -220,3 +222,107 @@ async def remove_profile_picture(supabase: supabaseDep, data: model.RemoveProfil
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+
+
+    def create_a_new_message(supabase: supabaseDep, chat_id: str, message: str, username: str):
+        info = {
+            'chat_id': chat_id,
+            'message': message,
+            'username': username
+        }
+        response = supabase.table('message').insert(info).execute()
+        return response.data
+
+    class ConnectionManager:
+        def __init__(self):
+            self.connections: list[WebSocket] = []
+
+        async def broadcast(self, message: str):
+            for connection in self.connections:
+                await connection.send_text(message)
+
+    @app.websocket("/ws/{chat_id}")
+    async def websocket_endpoint(supabase: supabaseDep, websocket: WebSocket, chat_id: str):
+        await websocket.accept()
+        if not connections.get(chat_id):
+            connections[chat_id] = ConnectionManager()
+        room: ConnectionManager = connections[chat_id]
+        room.connections.append(websocket)
+        try:
+            while True:
+                data = await websocket.receive_text()
+                json_data = json.loads(data)
+                print(json_data)
+                await room.broadcast(data)
+                #create_a_new_message(supabase, chat_id, data, username)
+        except WebSocketDisconnect:
+            del connections[chat_id]
+
+
+    @app.post("/messages/")
+    async def get_messages(supabase: supabaseDep, chat_id: str):
+        responses = supabase.table('message').select('*').eq('chat_id', chat_id).execute()
+        return responses.data
+
+
+    @app.get("/messages/add-chat")
+    async def add_message(supabase: supabaseDep, message: str, first_username: str, second_username: str):
+        chat_id = f'{first_username}{second_username}'
+        response = supabase.table('message').select('id').eq('chat_id', chat_id).execute()
+        if response.data:
+            item = create_a_new_message(supabase, chat_id, message, first_username)
+            return item
+        else:
+            chat_id = f'{second_username}{first_username}'
+            response = supabase.table('message').select('id').eq('chat_id', chat_id).execute()
+            if response.data:
+                item = create_a_new_message(supabase, chat_id, message, first_username)
+                return item
+            
+        chat_id = f'{first_username}{second_username}'
+        item = create_a_new_message(supabase, chat_id, message, first_username)
+        return item
+
+
+    @app.get('/message/get-chat-id')
+    async def get_chat_id(supabase: supabaseDep, first_username: str, second_username: str):
+        chat_id = f'{first_username}{second_username}'
+        response = supabase.table('message').select('id').eq('chat_id', chat_id).execute()
+        if response.data:
+            return chat_id
+        else:
+            chat_id = f'{second_username}{first_username}'
+            response = supabase.table('message').select('id').eq('chat_id', chat_id).execute()
+            if response.data:
+                return chat_id
+        chat_id = f'{first_username}{second_username}'
+        return chat_id
+
+    @app.get("/get-chat-id")
+    async def get_chat_id(supabase: supabaseDep, user1_id: str, user2_id: str):
+        chat_id = f'{user1_id}{user2_id}'
+        response = supabase.table('message').select('id').eq('chat_id', chat_id).execute()
+        if response.data:
+            return chat_id
+        else:
+            chat_id = f'{user2_id}{user1_id}'
+            response = supabase.table('message').select('id').eq('chat_id', chat_id).execute()
+            if response.data:
+                return chat_id
+        chat_id = f'{user1_id}{user2_id}'
+        return chat_id
+
+    # @app.get("/get-chat-id-of-users")
+    # async def get_chat_id_of_users(supabase: supabaseDep, user1_id: str, user2_id: str):
+    #     chat_id = f'{user1_id}{user2_id}'
+    #     response = supabase.table('message').select('id').eq('chat_id', chat_id).execute()
+    #     if response.data:
+    #         return chat_id
+    #     else:
+    #         chat_id = f'{user2_id}{user1_id}'
+    #         response = supabase.table('message').select('id').eq('chat_id', chat_id).execute()
+    #         if response.data:
+    #             return chat_id
+    #     chat_id = f'{user1_id}{user2_id}'
+    #     return chat_id
