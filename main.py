@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, status,Depends
+from fastapi import FastAPI, HTTPException, status, Depends, WebSocket
 import model
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,12 +11,14 @@ from datetime import datetime
 import uuid
 from model import UpdateUserProfile
 
+
+
 load_dotenv()
 
 url= os.getenv("url")
 key = os.getenv("key")
 
-app =  FastAPI()
+app = FastAPI()
 WRONG_STATUS_CODE = 400
 UNKNOWN_STATUS_CODE = 500
 
@@ -36,18 +38,18 @@ def supabaseClient():
 
 supabaseDep = Annotated[Client, Depends(supabaseClient)]
 
-def user_exist(supabase: supabaseDep, username,email):
+def user_exist(supabase: supabaseDep, username, email):
     response = supabase.table('user').select('*').or_(
-    f'username.eq.{username}, email.eq.{email}'
+        f'username.eq.{username}, email.eq.{email}'
     ).execute()
     if response.data:
         return True
     else:
         return False
-    
+
 def get_email_by_username(supabase: supabaseDep, username: str):
     response = supabase.table('user').select('email').eq(
-    'username', username
+        'username', username
     ).execute()
     if response.data:
         return response.data[0]['email']
@@ -55,10 +57,10 @@ def get_email_by_username(supabase: supabaseDep, username: str):
 
 
 @app.post('/register')
-def signup(supabase: supabaseDep,user_data:model.Signup):
+def signup(supabase: supabaseDep, user_data: model.Signup):
     try:
-        
-        if user_exist(supabase,user_data.username, user_data.email):
+
+        if user_exist(supabase, user_data.username, user_data.email):
             raise HTTPException(status_code=404, detail="l'utilisarteur existe déja")
         response = supabase.auth.sign_up({
             'email': user_data.email,
@@ -68,9 +70,10 @@ def signup(supabase: supabaseDep,user_data:model.Signup):
         return response
     except Exception as e:
         raise HTTPException(status_code=404, detail=str(e))
-    
+
+
 @app.post('/verify-otp')
-def verify_otp( supabase: supabaseDep,otp_data: model.VerifyOtp):
+def verify_otp(supabase: supabaseDep, otp_data: model.VerifyOtp):
     try:
         supabase = supabaseClient()
         supabase.auth.verify_otp(jsonable_encoder(otp_data))
@@ -80,15 +83,15 @@ def verify_otp( supabase: supabaseDep,otp_data: model.VerifyOtp):
             raise HTTPException(status_code=WRONG_STATUS_CODE, detail=str(e))
         else:
             raise HTTPException(status_code=UNKNOWN_STATUS_CODE, detail=str(e))
-        
-        
-@app.post('/login')
-def Login(supabase: supabaseDep,user_data: model.Login):
-    try: 
 
-        email = get_email_by_username(supabase, user_data.username) 
-        response =  supabase.auth.sign_in_with_password({
-            'email': email, 
+
+@app.post('/login')
+def Login(supabase: supabaseDep, user_data: model.Login):
+    try:
+
+        email = get_email_by_username(supabase, user_data.username)
+        response = supabase.auth.sign_in_with_password({
+            'email': email,
             'password': user_data.password
         })
         return jsonable_encoder(response.session)
@@ -98,15 +101,18 @@ def Login(supabase: supabaseDep,user_data: model.Login):
             detail=str(e)
         )
 
+
 @app.get('/users')
-def get_users( supabase: supabaseDep):
-    response= supabase.table("user").select("*").execute()
-    return response.data     
+def get_users(supabase: supabaseDep):
+    response = supabase.table("user").select("*").execute()
+    return response.data
+
 
 @app.get('/user')
-def get_users(supabase: supabaseDep,username: str):
-    response= supabase.table("user").select("*").eq('username', username).execute()
+def get_users(supabase: supabaseDep, username: str):
+    response = supabase.table("user").select("*").eq('username', username).execute()
     return response.data[0]
+
 
 @app.put("/update-user")
 async def update_user(supabase: supabaseDep, data: UpdateUserProfile):
@@ -118,10 +124,10 @@ async def update_user(supabase: supabaseDep, data: UpdateUserProfile):
             "description": data.description,
             "profile_picture_url": data.profile_picture_url,
         }
-        
+
         # Mettre à jour l'utilisateur dans la base de données
         response = supabase.table("user").update(update_data).eq("username", data.username).execute()
-        
+
         if response.data:
             return {
                 "status": "success",
@@ -132,26 +138,27 @@ async def update_user(supabase: supabaseDep, data: UpdateUserProfile):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Impossible de mettre à jour l'utilisateur"
             )
-            
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
 
+
 @app.get("/profile-picture/{username}")
 async def get_profile_picture(supabase: supabaseDep, username: str):
     try:
         response = supabase.table("user").select("profile_picture_url").eq("username", username).execute()
-        
+
         if not response.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
-        
+
         return {"profile_picture_url": response.data[0]["profile_picture_url"]}
-    
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -164,28 +171,28 @@ async def update_profile_picture(supabase: supabaseDep, data: model.UpdateProfil
     try:
         # Decode base64 image
         image_data = base64.b64decode(data.file_data)
-        
+
         # Generate unique filename
         file_ext = "jpg"  # You might want to make this dynamic based on the actual image type
         filename = f"{data.username}_{uuid.uuid4()}.{file_ext}"
-        
+
         # Upload to Supabase Storage
         storage_response = supabase.storage.from_("profile-pictures").upload(
             filename,
             image_data,
             {"content-type": "image/jpeg"}
         )
-        
+
         # Get public URL
         file_url = supabase.storage.from_("profile-pictures").get_public_url(filename)
-        
+
         # Update user profile in database
         response = supabase.table("user").update(
             {"profile_picture_url": file_url, "updated_at": datetime.utcnow().isoformat()}
         ).eq("username", data.username).execute()
-        
+
         return {"status": "success", "profile_picture_url": file_url}
-    
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -197,33 +204,31 @@ async def remove_profile_picture(supabase: supabaseDep, data: model.RemoveProfil
     try:
         # Récupérer l'URL actuelle de la photo de profil
         user = supabase.table("user").select("profile_picture_url").eq("username", data.username).execute()
-        
+
         if user.data and user.data[0].get("profile_picture_url"):
             current_url = user.data[0]["profile_picture_url"]
-            
+
             # Extraire le nom du fichier de l'URL
             filename = current_url.split("/")[-1]
-            
+
             # Supprimer le fichier du stockage Supabase
             supabase.storage.from_("profile-pictures").remove([filename])
-            
+
             # Mettre à jour l'utilisateur dans la base de données
             response = supabase.table("user").update({
                 "profile_picture_url": None,
                 "updated_at": datetime.utcnow().isoformat()
             }).eq("username", data.username).execute()
-            
+
             return {"status": "success", "message": "Photo de profil supprimée avec succès"}
         else:
             return {"status": "success", "message": "Aucune photo de profil à supprimer"}
-            
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-
-
 
     def create_a_new_message(supabase: supabaseDep, chat_id: str, message: str, username: str):
         info = {
