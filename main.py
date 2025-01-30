@@ -271,7 +271,7 @@ async def get_messages(supabase: supabaseDep, chat_id: str):
     return responses.data
 
 
-@app.get("/messages/add-chat")
+@app.post("/messages/add-chat")
 async def add_message(supabase: supabaseDep, message: str, first_username: str, second_username: str):
     chat_id = f'{first_username}{second_username}'
     response = supabase.table('message').select('id').eq('chat_id', chat_id).execute()
